@@ -177,6 +177,9 @@ kbd{font-family:'Oswald';background:#100f0c;border:1px solid var(--line);border-
 #tbtns button{height:58px;border-radius:50%;background:rgba(24,22,17,.78);border:1px solid var(--line);font-size:12px}
 #tbtns button.ready{border-color:var(--brass);color:var(--brass)}
 #tbtns button:active{background:rgba(214,166,74,.35)}
+#fireBtn{position:absolute;right:220px;bottom:40px;width:86px;height:86px;border-radius:50%;background:rgba(150,40,28,.55);border:2px solid rgba(255,190,160,.45);color:#fff;font-family:'Oswald';font-size:14px;letter-spacing:.05em;pointer-events:auto;touch-action:none;display:none}
+#fireBtn.on{background:rgba(200,60,40,.8)}
+body.fps #fireBtn{display:block}
 #rotate{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;text-align:center;padding:20px;font-family:'Oswald';font-size:22px;text-transform:uppercase}
 #rotate small{font-family:'Inter';font-size:13px;color:var(--muted);text-transform:none}
 body.touch #status{width:200px;padding:7px 9px;left:10px;bottom:auto;top:56px}
@@ -246,6 +249,7 @@ body.touch #orderTag{top:78px}
     <button data-act="reload">REC</button>
     <button data-act="zoom" id="tbZoom">MAPA</button>
   </div>
+  <button id="fireBtn">ATIRAR</button>
 </div>
 
 <div id="downed" class="hidden">
@@ -298,13 +302,13 @@ body.touch #orderTag{top:78px}
       </div>
       <div>
         <h3>Controles (PC)</h3>
-        <kbd>WASD</kbd> andar · <kbd>Mouse</kbd> mirar · <kbd>Clique</kbd> atirar<br>
+        <kbd>WASD</kbd> andar · <kbd>Mouse</kbd> olhar/mirar · <kbd>Clique</kbd> atirar · <kbd>V</kbd> trocar câmera (primeira pessoa / tática)<br>
         <kbd>R</kbd> recarregar · <kbd>Q</kbd> trocar arma · <kbd>G</kbd> granada (engenheiro: mina)<br>
         <kbd>E</kbd> habilidade da classe · <kbd>F</kbd> cavar trincheira (engenheiro)<br>
         <kbd>1</kbd>–<kbd>5</kbd> ordem de líder: todos para a bandeira A–E (ou clique na bandeira lá em cima)<br>
         <kbd>Tab</kbd> placar · <kbd>Esc</kbd> pausa · <kbd>Botão direito</kbd> sniper amplia a visão
         <h3 style="margin-top:8px">Celular</h3>
-        Lado esquerdo da tela: andar. Lado direito: mirar e atirar (empurre mais para atirar). Toque numa bandeira lá em cima para dar ordem.
+        Lado esquerdo da tela: andar. Lado direito: arraste para olhar e use o botão ATIRAR. O botão MAPA troca para a visão de cima. Toque numa bandeira lá em cima para dar ordem.
       </div>
     </div>
   </div>
@@ -366,6 +370,7 @@ body.touch #orderTag{top:78px}
     <button class="primary" id="btnResume">Continuar</button>
     <button class="ghost" id="btnSound">Som: ligado</button>
     <button class="ghost" id="btnRain">Chuva: ligada</button>
+    <button class="ghost" id="btnView">Câmera: primeira pessoa</button>
     <button class="ghost" id="btnQuit">Sair para o menu</button>
   </div>
 </div>
@@ -709,7 +714,11 @@ let tickets = [TICKETS, TICKETS], orders = [-1, -1], teamNames = ['Batalhão da 
 let matchT = 0, time = 0, player = null, nextId = 1, demo = true;
 let visible = [new Set(), new Set()], visT = 0, drainT = 0, leaderT = 0, fieldsDirty = false, fieldT = 0, hudT = 0;
 let cam = { x: WW / 2, y: WH / 2, z: 1, shake: 0, zoomOut: false };
-let settings = { diff: 'veterano', sound: true, rain: true };
+let settings = { diff: 'veterano', sound: true, rain: true, fps: true };
+try { if (localStorage.getItem('nur_view') === 'tatica') settings.fps = false; } catch (e) { }
+let vmKick = 0; cam.pitch = 0; cam.fov = 72;
+// câmera em primeira pessoa ativa (vivo e em jogo); morto/menu usa a visão de cima
+function fpsOn() { return settings.fps && player && player.alive && (state === 'play' || state === 'pause'); }
 let sel = { cls: 'fuzileiro', spawn: -1 };
 let dmgFlash = 0, hitT = 0, killT = 0, msgT = 0;
 const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0 || /[?&]touch/.test(location.search);
@@ -852,7 +861,7 @@ function toMenu() {
   pickEnemyName(); renderMenu(); showOnly('menu');
   newMatch(true); resize();
 }
-function showOnly(id) { for (const s of ['menu', 'lobby', 'respawn', 'pause', 'over', 'board']) $(s).classList.toggle('hidden', s !== id); }
+function showOnly(id) { if (id && document.pointerLockElement) document.exitPointerLock(); for (const s of ['menu', 'lobby', 'respawn', 'pause', 'over', 'board']) $(s).classList.toggle('hidden', s !== id); }
 
 // ---------- combate ----------
 function fire(u) {
@@ -874,7 +883,7 @@ function fire(u) {
   u.revealT = 1; u.shotT = time;
   parts.push({ x: mx + Math.cos(u.ang) * 4, y: my + Math.sin(u.ang) * 4, vx: 0, vy: 0, life: .05, max: .05, size: Wp.thick * 3 + 4, type: 'flash' });
   SFX.play(Wp.snd, u.x, u.y);
-  if (u.isPlayer) cam.shake = Math.max(cam.shake, Wp.dmg > 50 ? 5 : Wp.pellets > 1 ? 4 : 1.4);
+  if (u.isPlayer) cam.shake = Math.max(cam.shake, Wp.dmg > 50 ? 5 : Wp.pellets > 1 ? 4 : 1.4), vmKick = 1;
   if (s.mag === 0) startReload(u);
 }
 function startReload(u) {
@@ -1389,12 +1398,33 @@ function worldMouse() {
   return isFinite(rx) && isFinite(rz) ? [rx, rz] : [cam.x, cam.y];
 }
 function aimPoint(dist) {
-  if (isTouch) return [player.x + Math.cos(player.ang) * dist, player.y + Math.sin(player.ang) * dist];
+  if (isTouch || fpsOn()) return [player.x + Math.cos(player.ang) * dist, player.y + Math.sin(player.ang) * dist];
   return worldMouse();
+}
+function scoped() { return player && player.alive && player.cls === 'sniper' && (mouse.right || touch.scope || player.focusT > 0); }
+// assistência de mira: puxa a mira devagar para o inimigo visível mais perto do centro
+function aimAssist(u, dt, cone, k) {
+  let best = null, bd = cone;
+  for (const e of units) { if (e.team === u.team || !e.alive || e.downed || !visible[u.team].has(e.id)) continue; const de = Math.hypot(e.x - u.x, e.y - u.y); if (de > 950) continue; const ad = Math.abs(angDiff(u.ang, Math.atan2(e.y - u.y, e.x - u.x))); if (ad < bd) { bd = ad; best = e; } }
+  if (best) u.ang += angDiff(u.ang, Math.atan2(best.y - u.y, best.x - u.x)) * Math.min(1, dt * k);
+}
+function fpsInput(u, dt) {
+  let f = 0, s = 0;
+  if (keys.KeyW || keys.ArrowUp) f += 1; if (keys.KeyS || keys.ArrowDown) f -= 1;
+  if (keys.KeyD) s += 1; if (keys.KeyA) s -= 1;
+  if (keys.ArrowLeft) u.ang -= dt * 2.4; if (keys.ArrowRight) u.ang += dt * 2.4;
+  if (touch.move) { const dx = touch.move.x - touch.move.ox, dy = touch.move.y - touch.move.oy, l = Math.hypot(dx, dy); if (l > 8) { const k = Math.min(1, l / 55); s = dx / l * k; f = -dy / l * k; } }
+  const l = Math.hypot(f, s); if (l > 1) { f /= l; s /= l; }
+  const c = Math.cos(u.ang), sn = Math.sin(u.ang);
+  u.mvx = c * f - sn * s; u.mvy = sn * f + c * s;
+  if ((f || s) && u.deployed) u.deployed = false;
+  if (isTouch) aimAssist(u, dt, touch.fire ? .12 : .07, touch.fire ? 5 : 2);
+  u.wantFire = isTouch ? !!touch.fire : mouse.down;
 }
 function playerInput(dt) {
   const u = player;
   if (state !== 'play' || !u.alive || u.downed) { if (u) { u.wantFire = false; u.mvx = u.mvy = 0; } return; }
+  if (fpsOn()) { fpsInput(u, dt); return; }
   let mx = 0, my = 0;
   if (keys.KeyW || keys.ArrowUp) my -= 1; if (keys.KeyS || keys.ArrowDown) my += 1;
   if (keys.KeyA || keys.ArrowLeft) mx -= 1; if (keys.KeyD || keys.ArrowRight) mx += 1;
@@ -1424,7 +1454,7 @@ function action(a) {
   if (state !== 'play' || !player) return;
   const u = player;
   if (a === 'score') { toggleBoard(); return; }
-  if (a === 'zoom') { cam.zoomOut = !cam.zoomOut; return; }
+  if (a === 'zoom' || a === 'view') { cycleView(a === 'view'); return; }
   if (!u.alive) return;
   if (NET.role === 'client') {
     // online: o anfitrião executa; aqui só manda o comando junto do próximo envio
@@ -1443,8 +1473,18 @@ function action(a) {
     case 'gren': { const [x, y] = aimPoint(260); throwGrenade(u, x, y); break; }
     case 'ab': { const [x, y] = aimPoint(480); if (!useAbility(u, x, y) && u.abCd > 0) msg(`Habilidade em ${Math.ceil(u.abCd)}s`, '#a59f8b', .8); break; }
     case 'dig': if (u.cls === 'engenheiro') { if (u.digCd > 0) msg(`Cavar em ${Math.ceil(u.digCd)}s`, '#a59f8b', .8); else digTrench(u); } break;
-    case 'zoom': cam.zoomOut = !cam.zoomOut; break;
   }
+}
+// primeira pessoa → tática → tática de longe → primeira pessoa (V no PC só alterna as duas)
+function cycleView(simple) {
+  if (settings.fps) { settings.fps = false; cam.zoomOut = false; }
+  else if (!simple && !cam.zoomOut) cam.zoomOut = true;
+  else { settings.fps = true; cam.zoomOut = false; }
+  touch.aim = touch.fire = null; mouse.down = false; stickEl('stickR');
+  if (!settings.fps && document.pointerLockElement) document.exitPointerLock();
+  try { localStorage.setItem('nur_view', settings.fps ? 'fps' : 'tatica'); } catch (e) { }
+  $('btnView').textContent = 'Câmera: ' + (settings.fps ? 'primeira pessoa' : 'tática (de cima)');
+  if (state === 'play') msg(settings.fps ? 'Primeira pessoa' : cam.zoomOut ? 'Visão tática · longe' : 'Visão tática', '#d6a64a', .9);
 }
 function setOrder(i) {
   if (!player || state !== 'play') return;
@@ -1468,13 +1508,26 @@ addEventListener('keydown', e => {
   if (e.code === 'Escape') { if (state === 'play' && $('pause').classList.contains('hidden')) pauseGame(); else if (state === 'pause' || !$('pause').classList.contains('hidden')) resumeGame(); return; }
   if (e.repeat) return;
   if (state === 'play' && player && !player.alive && (e.code === 'Space' || e.code === 'Enter')) { deploy(); return; }
-  const map = { KeyR: 'reload', KeyQ: 'swap', KeyG: 'gren', KeyE: 'ab', KeyF: 'dig', Space: 'giveup' };
+  const map = { KeyR: 'reload', KeyQ: 'swap', KeyG: 'gren', KeyE: 'ab', KeyF: 'dig', Space: 'giveup', KeyV: 'view' };
   if (map[e.code]) action(map[e.code]);
   if (/^Digit[1-5]$/.test(e.code) && state === 'play') setOrder(+e.code[5] - 1);
 });
 addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'Tab' && state === 'play') showBoard(false); });
-cv.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-cv.addEventListener('mousedown', e => { SFX.init(); if (e.button === 0) mouse.down = true; if (e.button === 2) mouse.right = true; });
+function lookBy(dx, dy, k) {
+  if (!fpsOn() || state !== 'play' || !player || player.downed) return;
+  const z = scoped() ? .32 : 1;
+  const a = player.ang + dx * k * z; player.ang = Math.atan2(Math.sin(a), Math.cos(a)); cam.pitch = clamp(cam.pitch - dy * k * z, -.45, .35);
+}
+addEventListener('mousemove', e => {
+  if (e.target === cv) { mouse.x = e.clientX; mouse.y = e.clientY; }
+  if (document.pointerLockElement === cv) lookBy(e.movementX || 0, e.movementY || 0, .0024);
+});
+cv.addEventListener('mousedown', e => {
+  SFX.init(); if (e.button === 0) mouse.down = true; if (e.button === 2) mouse.right = true;
+  if (fpsOn() && state === 'play' && document.pointerLockElement !== cv && cv.requestPointerLock) { try { const p = cv.requestPointerLock(); if (p && p.catch) p.catch(() => { }); } catch (err) { } }
+});
+// Esc solta o mouse: no PC isso abre a pausa
+document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && fpsOn() && state === 'play' && $('pause').classList.contains('hidden')) { mouse.down = false; pauseGame(); } });
 addEventListener('mouseup', e => { if (e.button === 0) mouse.down = false; if (e.button === 2) mouse.right = false; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; mouse.down = false; if (state === 'play' && !NET.role) pauseGame(); });
@@ -1487,13 +1540,23 @@ cv.addEventListener('touchstart', e => {
     const s = { id: t.identifier, ox: t.clientX, oy: t.clientY, x: t.clientX, y: t.clientY };
     if (t.clientX < innerWidth * .45) { if (!touch.move) touch.move = s; } else if (!touch.aim) touch.aim = s;
   }
-  stickEl('stickL', touch.move); stickEl('stickR', touch.aim);
+  stickEl('stickL', touch.move); stickEl('stickR', fpsOn() ? null : touch.aim);
 }, { passive: false });
 cv.addEventListener('touchmove', e => {
   e.preventDefault();
-  for (const t of e.changedTouches) for (const k of ['move', 'aim']) { const s = touch[k]; if (s && s.id === t.identifier) { s.x = t.clientX; s.y = t.clientY; const dx = s.x - s.ox, dy = s.y - s.oy, l = Math.hypot(dx, dy); if (l > 70) { s.ox = s.x - dx / l * 70; s.oy = s.y - dy / l * 70; } } }
-  stickEl('stickL', touch.move); stickEl('stickR', touch.aim);
+  for (const t of e.changedTouches) for (const k of ['move', 'aim']) { const s = touch[k]; if (s && s.id === t.identifier) {
+    if (k === 'aim' && fpsOn()) { lookBy(t.clientX - s.x, t.clientY - s.y, .0068); s.x = t.clientX; s.y = t.clientY; continue; }
+    s.x = t.clientX; s.y = t.clientY; const dx = s.x - s.ox, dy = s.y - s.oy, l = Math.hypot(dx, dy); if (l > 70) { s.ox = s.x - dx / l * 70; s.oy = s.y - dy / l * 70; } } }
+  stickEl('stickL', touch.move); stickEl('stickR', fpsOn() ? null : touch.aim);
 }, { passive: false });
+// botão de tiro (primeira pessoa): segurar atira, arrastar também gira a visão
+{
+  const fb = $('fireBtn'); let lx = 0, ly = 0, pid = null;
+  fb.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); SFX.init(); pid = e.pointerId; lx = e.clientX; ly = e.clientY; touch.fire = true; fb.classList.add('on'); try { fb.setPointerCapture(pid); } catch (err) { } });
+  fb.addEventListener('pointermove', e => { if (e.pointerId !== pid) return; lookBy(e.clientX - lx, e.clientY - ly, .0068); lx = e.clientX; ly = e.clientY; });
+  const up = e => { if (e.pointerId !== pid) return; pid = null; touch.fire = false; fb.classList.remove('on'); };
+  fb.addEventListener('pointerup', up); fb.addEventListener('pointercancel', up);
+}
 function touchEnd(e) { for (const t of e.changedTouches) for (const k of ['move', 'aim']) if (touch[k] && touch[k].id === t.identifier) touch[k] = null; stickEl('stickL', touch.move); stickEl('stickR', touch.aim); }
 cv.addEventListener('touchend', touchEnd); cv.addEventListener('touchcancel', touchEnd);
 for (const b of document.querySelectorAll('#tbtns button')) b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); action(b.dataset.act); });
@@ -1630,7 +1693,7 @@ function syncUnits(dt) {
     let g = u.g;
     if (!g || g.userData.cls !== u.cls) { if (g) scene.remove(g); g = u.g = makeSoldier(u); }
     const ud = g.userData;
-    const vis = u.alive && (my < 0 || u.team === my || visible[my].has(u.id));
+    const vis = u.alive && (my < 0 || u.team === my || visible[my].has(u.id)) && !(u === player && FPSV);
     g.visible = vis; if (!vis) continue;
     const gh = groundH(u.x, u.y); ud.vy += (gh - ud.vy) * Math.min(1, dt * 10);
     g.position.set(u.x, ud.vy, u.y); g.rotation.y = -u.ang;
@@ -1703,10 +1766,80 @@ function syncMisc(dt) {
 
 // --- projeção para a camada 2D ---
 const _v = new THREE.Vector3();
-let PX = 1;
-function proj(x, y, z) { _v.set(x, y, z).project(camera); return [(_v.x * .5 + .5) * W, (-_v.y * .5 + .5) * H, _v.z]; }
+let PX = 1, PS = 1, PD = 1, FOC = 1, FPSV = false;
+// projeta para a tela; PS = pixels por unidade naquela distância (serve para as duas câmeras)
+function proj(x, y, z) {
+  _v.set(x, y, z).applyMatrix4(camera.matrixWorldInverse); PD = -_v.z; PS = FOC / Math.max(25, PD);
+  if (PD <= 1) return [W / 2, H * 2, 2];
+  _v.applyMatrix4(camera.projectionMatrix); return [(_v.x * .5 + .5) * W, (-_v.y * .5 + .5) * H, _v.z];
+}
+
+// --- arma em primeira pessoa (cena própria, desenhada por cima) ---
+const vmScene = new THREE.Scene(), vmCam = new THREE.PerspectiveCamera(55, 1, .5, 300);
+vmScene.add(new THREE.HemisphereLight(0xd8d6d0, 0x3c3226, 1.05));
+{ const d = new THREE.DirectionalLight(0xffe4c0, .7); d.position.set(-1, 2, 1); vmScene.add(d); }
+const vm = { root: new THREE.Group(), key: '', flash: null, walk: 0, swayX: 0, swayY: 0, lastAng: 0, recoil: 0 };
+vmScene.add(vm.root);
+function buildViewmodel(u) {
+  const wid = u.w[u.wi] ? u.w[u.wi].id : 'pistola', key = wid + u.team + u.cls;
+  if (vm.key === key) return; vm.key = key;
+  while (vm.root.children.length) vm.root.remove(vm.root.children[0]);
+  const Wp = WEAPONS[wid], m = SM.team[u.team], pistol = wid === 'pistola';
+  const g = new THREE.Group(); vm.root.add(g);
+  const box = (w, h, d, mat, x, y, z) => { const me = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); me.position.set(x, y, z); g.add(me); return me; };
+  const len = pistol ? 9 : 16 + Wp.len * .55, th = pistol ? 1.6 : 1.4 + Wp.thick * .35;
+  box(th * 1.3, th * 1.9, len, SM.gun, 0, 0, -len / 2);                 // corpo
+  box(th * .7, th * .7, len * .45, SM.gun, 0, th * .35, -len - len * .2); // cano
+  if (!pistol) { box(th * 1.1, th * 2.6, 5, L(0x3a2c1e), 0, -th * .9, 2.5); box(th, th * 2.2, th * 1.2, SM.gun, 0, -th * 1.8, -len * .35); } // coronha e carregador
+  if (wid === 'rifle') { const sc = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.5, 11, 10).rotateX(Math.PI / 2), SM.gun); sc.position.set(0, th * 1.6, -len * .45); g.add(sc); }
+  // braços e mãos
+  box(3.2, 3.2, 12, m.body, 2.5, -3.2, 5.5); box(2.6, 2.6, 3, SM.skin, .6, -1.6, -.5);
+  if (!pistol) { box(3, 3, 12, m.body, -4.5, -3.4, -len * .45 + 6); box(2.6, 2.4, 3, SM.skin, -1.2, -1.4, -len * .5); }
+  vm.flash = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: .95, depthWrite: false, side: THREE.DoubleSide }));
+  vm.flash.position.set(0, th * .35, -len * 1.45 - 1); vm.flash.visible = false; g.add(vm.flash);
+  vm.len = len;
+}
+function renderViewmodel(dt) {
+  const u = player; buildViewmodel(u);
+  const moving = Math.abs(u.mvx) + Math.abs(u.mvy) > .1 && !u.deployed;
+  if (moving) vm.walk += dt * CLASSES[u.cls].speed * .06;
+  const turn = angDiff(vm.lastAng, u.ang); vm.lastAng = u.ang;
+  vm.swayX = lerp(vm.swayX, clamp(-turn * 40, -3, 3), Math.min(1, dt * 8));
+  vmKick = Math.max(0, vmKick - dt * 9); vm.recoil = lerp(vm.recoil, vmKick, Math.min(1, dt * 30));
+  const bob = moving ? 1 : .15, rl = u.reloadT > 0 ? 1 : 0;
+  vm.root.scale.setScalar(.52);
+  vm.root.position.set(5.2 + vm.swayX + Math.cos(vm.walk) * .7 * bob, -5.2 + Math.abs(Math.sin(vm.walk)) * .6 * bob - rl * 4 + (u.downed ? -3 : 0), -12 + vm.recoil * 2.4);
+  vm.root.rotation.set(vm.recoil * .12 - rl * .5, .07 + vm.swayX * .02, rl * .4);
+  vm.flash.visible = vmKick > .65; if (vm.flash.visible) vm.flash.rotation.z = Math.random() * 3;
+  vmCam.aspect = W / H; vmCam.updateProjectionMatrix();
+  renderer.autoClear = false; renderer.clearDepth(); renderer.render(vmScene, vmCam); renderer.autoClear = true;
+}
+const SKY_TAT = new THREE.Color(FOGC), SKY_FPS = new THREE.Color(0x4a473f);
+function fpsCamera(dt) {
+  const u = player, ud = u.g && u.g.userData;
+  const gh = ud ? ud.vy : groundH(u.x, u.y);
+  const moving = Math.abs(u.mvx) + Math.abs(u.mvy) > .1 && !u.deployed;
+  const eye = gh + (u.downed ? 12 : u.deployed ? 34 : 44) + (moving ? Math.sin(vm.walk * 2) * 1.1 : 0);
+  cam.eye = cam.eye === undefined ? eye : lerp(cam.eye, eye, Math.min(1, dt * 12));
+  cam.x = u.x; cam.y = u.y;
+  const fov = scoped() ? 22 : 72; cam.fov = lerp(cam.fov, fov, Math.min(1, dt * 10));
+  cam.shake = Math.max(0, cam.shake - dt * 30);
+  const j = cam.shake * .0025, yaw = u.ang + (Math.random() - .5) * j, pitch = cam.pitch + (Math.random() - .5) * j + vm.recoil * .025;
+  camera.fov = cam.fov; camera.near = 2; camera.far = 2900; camera.aspect = W / H; camera.updateProjectionMatrix();
+  camera.position.set(u.x, cam.eye, u.y);
+  camera.lookAt(u.x + Math.cos(yaw) * Math.cos(pitch) * 100, cam.eye + Math.sin(pitch) * 100, u.y + Math.sin(yaw) * Math.cos(pitch) * 100);
+  camera.updateMatrixWorld();
+  FOC = H / (2 * Math.tan(cam.fov * Math.PI / 360)); PX = FOC / 400; cam.z = PX;
+  scene.background = SKY_FPS; scene.fog.color.copy(SKY_FPS);
+  scene.fog.near = scoped() ? 900 : 380; scene.fog.far = scoped() ? 2900 : 2100;
+  sun.position.set(u.x - 450, 1000, u.y + 550); sun.target.position.set(u.x + Math.cos(u.ang) * 500, 0, u.y + Math.sin(u.ang) * 500); sun.target.updateMatrixWorld();
+}
 
 function render(dt) {
+  FPSV = fpsOn();
+  if (document.body.classList.contains('fps') !== FPSV) document.body.classList.toggle('fps', FPSV);
+  if (FPSV) { fpsCamera(dt); renderWorld(dt); return; }
+  if (camera.near !== 20) { camera.near = 20; camera.far = 9000; camera.fov = FOV; scene.background = SKY_TAT; scene.fog.color.copy(SKY_TAT); cam.eye = undefined; }
   // câmera
   if (player && state !== 'menu') {
     let tx = player.x, ty = player.y;
@@ -1730,24 +1863,31 @@ function render(dt) {
   camera.position.set(cam.x + shx + Math.sin(cam.yaw) * hd, hy, cam.y + shz + Math.cos(cam.yaw) * hd);
   camera.lookAt(cam.x + shx, 0, cam.y + shz);
   camera.updateMatrixWorld();
-  PX = H / (2 * TANH * cam.d); cam.z = PX;
+  PX = H / (2 * TANH * cam.d); cam.z = PX; FOC = H / (2 * TANH);
   scene.fog.near = cam.d * .9; scene.fog.far = cam.d * 2.6;
   sun.position.set(cam.x - 450, 1000, cam.y + 550); sun.target.position.set(cam.x, 0, cam.y); sun.target.updateMatrixWorld();
+  renderWorld(dt);
+}
+function renderWorld(dt) {
   // mundo
   if (terrainDirty && time - terrUpT > .35) { gGeo.attributes.position.needsUpdate = true; gGeo.computeVertexNormals(); terrainDirty = false; terrUpT = time; }
   if (propsDirty && time - propsUpT > .1) { rebuildProps(); propsUpT = time; }
   if (groundDirty && time - groundUpT > .8) { groundTex.needsUpdate = true; groundDirty = false; groundUpT = time; }
   syncUnits(dt); syncFlags(); syncMisc(dt);
   renderer.render(scene, camera);
+  const sc = FPSV && scoped() && cam.fov < 40;
+  if (FPSV && !sc) renderViewmodel(dt);
   // camada 2D por cima
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H);
   const my = myTeam();
-  if (my >= 0) drawFog();
+  if (my >= 0 && !FPSV) drawFog();
   drawParts(); drawBullets(); drawLabels(); drawFlagLabels();
   if (settings.rain) drawRain(dt);
   if (player && orders[player.team] >= 0) offscreenArrow(flags[orders[player.team]]);
-  if (player && player.alive && !player.downed && state === 'play' && !isTouch) drawCrosshair();
-  if (player && player.alive && isTouch && state === 'play') drawTouchAim();
+  if (sc) drawScope();
+  if (FPSV) { if (!player.downed && state === 'play') drawCenterCross(); }
+  else if (player && player.alive && !player.downed && state === 'play' && !isTouch) drawCrosshair();
+  else if (player && player.alive && isTouch && state === 'play') drawTouchAim();
   $('vignette').style.opacity = Math.max(dmgFlash * .9, player && player.alive && !player.downed && player.hp < player.maxHp * .3 ? .35 + .1 * Math.sin(time * 5) : 0, player && player.downed ? .7 : 0);
 }
 function onScr(p, m = 120) { return p[2] < 1 && p[0] > -m && p[1] > -m && p[0] < W + m && p[1] < H + m; }
@@ -1773,8 +1913,9 @@ function drawFog() {
 const PH = { flash: 25, spark: 20, dirt: 8, blood: 14, smoke: 30, redsmoke: 24, boom: 16, ring: 2, cross: 46 };
 function drawParts() {
   for (const p of parts) {
-    const q = proj(p.x, PH[p.type] || 10, p.y); if (!onScr(q, p.size * PX + 40)) continue;
-    const k = p.life / p.max, x = q[0], y = q[1], S = PX;
+    const q = proj(p.x, PH[p.type] || 10, p.y); if (FPSV && PD < 30) continue;
+    const S = FPSV ? PS : PX; if (!onScr(q, p.size * S + 40)) continue;
+    const k = p.life / p.max, x = q[0], y = q[1];
     switch (p.type) {
       case 'flash': ctx.fillStyle = `rgba(255,220,120,${k})`; ctx.beginPath(); ctx.arc(x, y, p.size * .5 * S, 0, 7); ctx.fill(); break;
       case 'spark': ctx.fillStyle = `rgba(255,200,120,${k})`; ctx.fillRect(x, y, 2 * S, 2 * S); break;
@@ -1783,7 +1924,7 @@ function drawParts() {
       case 'smoke': ctx.fillStyle = `rgba(78,74,66,${k * .5})`; ctx.beginPath(); ctx.arc(x, y - (1 - k) * 30 * S, p.size * (1.6 - k * .6) * S, 0, 7); ctx.fill(); break;
       case 'redsmoke': ctx.fillStyle = `rgba(190,50,40,${k * .35})`; ctx.beginPath(); ctx.arc(x, y - (1 - k) * 40 * S, p.size * (1.8 - k * .8) * S, 0, 7); ctx.fill(); break;
       case 'boom': { const r = p.size * S, g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(255,240,190,${k})`); g.addColorStop(.4, `rgba(255,150,50,${k * .8})`); g.addColorStop(1, 'rgba(120,40,10,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); break; }
-      case 'ring': { const r = p.size * (1 - k * .7) * S; ctx.strokeStyle = `rgba(${p.color},${k * .6})`; ctx.lineWidth = 3 * DPR; ctx.beginPath(); ctx.ellipse(x, y, r, r * Math.sin(PITCH), 0, 0, 7); ctx.stroke(); break; }
+      case 'ring': { const r = p.size * (1 - k * .7) * S; ctx.strokeStyle = `rgba(${p.color},${k * .6})`; ctx.lineWidth = 3 * DPR; ctx.beginPath(); ctx.ellipse(x, y, r, r * (FPSV ? .12 : Math.sin(PITCH)), 0, 0, 7); ctx.stroke(); break; }
       case 'cross': ctx.fillStyle = `rgba(140,210,110,${k})`; ctx.fillRect(x - 2 * S, y - 6 * S, 4 * S, 12 * S); ctx.fillRect(x - 6 * S, y - 2 * S, 12 * S, 4 * S); break;
     }
   }
@@ -1809,6 +1950,7 @@ function drawLabels() {
     }
     const q = proj(u.x, gy + 64, u.y); if (!onScr(q)) continue;
     const ally = my < 0 || u.team === my;
+    if (FPSV && PD > (ally ? 1300 : 2200)) continue;
     if (!u.isPlayer) {
       const hum = isHuman(u);
       ctx.font = `bold ${(hum ? 12 : 11) * DPR}px Oswald, sans-serif`;
@@ -1820,7 +1962,7 @@ function drawLabels() {
       ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(q[0] - w / 2, y, w, 4 * DPR);
       ctx.fillStyle = ally ? '#9ab84f' : '#d4553d'; ctx.fillRect(q[0] - w / 2, y, w * k, 4 * DPR);
     }
-    if (u.reloadT > 0 && ally) { const c = proj(u.x, gy + 20, u.y), W2 = WEAPONS[u.w[u.reloadSlot].id]; ctx.strokeStyle = 'rgba(255,255,255,.65)'; ctx.lineWidth = 2 * DPR; ctx.beginPath(); ctx.arc(c[0], c[1], 22 * PX, -Math.PI / 2, -Math.PI / 2 + (1 - u.reloadT / W2.reload) * Math.PI * 2); ctx.stroke(); }
+    if (u.reloadT > 0 && ally) { const c = proj(u.x, gy + 20, u.y), W2 = WEAPONS[u.w[u.reloadSlot].id]; ctx.strokeStyle = 'rgba(255,255,255,.65)'; ctx.lineWidth = 2 * DPR; ctx.beginPath(); ctx.arc(c[0], c[1], 22 * (FPSV ? PS : PX), -Math.PI / 2, -Math.PI / 2 + (1 - u.reloadT / W2.reload) * Math.PI * 2); ctx.stroke(); }
     if (u.isPlayer && u.cls === 'medico' && u.reviveT > 0) { const c = proj(u.x, gy + 20, u.y); ctx.strokeStyle = '#9fc070'; ctx.lineWidth = 4 * DPR; ctx.beginPath(); ctx.arc(c[0], c[1], 28 * PX, -Math.PI / 2, -Math.PI / 2 + u.reviveT / 1.3 * Math.PI * 2); ctx.stroke(); }
   }
 }
@@ -1869,6 +2011,26 @@ function drawCrosshair() {
   if (hitT > 0 || killT > 0) { ctx.strokeStyle = killT > 0 ? '#ff4030' : '#fff'; ctx.lineWidth = (killT > 0 ? 3 : 2) * s; const k = 6 * s, o = 4 * s; ctx.beginPath(); ctx.moveTo(x - o - k, y - o - k); ctx.lineTo(x - o, y - o); ctx.moveTo(x + o + k, y - o - k); ctx.lineTo(x + o, y - o); ctx.moveTo(x - o - k, y + o + k); ctx.lineTo(x - o, y + o); ctx.moveTo(x + o + k, y + o + k); ctx.lineTo(x + o, y + o); ctx.stroke(); }
   if (dist > Wp.range) { ctx.fillStyle = 'rgba(240,120,100,.8)'; ctx.font = `${11 * s}px Inter, sans-serif`; ctx.textAlign = 'center'; ctx.fillText('fora de alcance', x, y + 26 * s); }
 }
+// mira fixa no centro (primeira pessoa): abertura = dispersão real da arma
+function drawCenterCross() {
+  const x = W / 2, y = H / 2, s = DPR, u = player, Wp = WEAPONS[u.w[u.wi].id];
+  const moving = Math.abs(u.mvx) + Math.abs(u.mvy) > .1;
+  let sp = Wp.spread * (moving ? 1.5 : 1) * (u.deployed ? .3 : 1); if (u.w[u.wi].id === 'rifle' && moving) sp *= 3;
+  const gap = Math.min(H * .2, sp * FOC) + 4 * s + vm.recoil * 6 * s;
+  ctx.strokeStyle = hitT > 0 ? '#ff6a50' : 'rgba(240,235,220,.85)'; ctx.lineWidth = 2 * s;
+  ctx.beginPath();
+  ctx.moveTo(x - gap - 7 * s, y); ctx.lineTo(x - gap, y); ctx.moveTo(x + gap, y); ctx.lineTo(x + gap + 7 * s, y);
+  ctx.moveTo(x, y - gap - 7 * s); ctx.lineTo(x, y - gap); ctx.moveTo(x, y + gap); ctx.lineTo(x, y + gap + 7 * s);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(240,235,220,.9)'; ctx.fillRect(x - s, y - s, 2 * s, 2 * s);
+  if (hitT > 0 || killT > 0) { ctx.strokeStyle = killT > 0 ? '#ff4030' : '#fff'; ctx.lineWidth = (killT > 0 ? 3 : 2) * s; const k = 6 * s, o = 5 * s; ctx.beginPath(); ctx.moveTo(x - o - k, y - o - k); ctx.lineTo(x - o, y - o); ctx.moveTo(x + o + k, y - o - k); ctx.lineTo(x + o, y - o); ctx.moveTo(x - o - k, y + o + k); ctx.lineTo(x - o, y + o); ctx.moveTo(x + o + k, y + o + k); ctx.lineTo(x + o, y + o); ctx.stroke(); }
+}
+function drawScope() {
+  const x = W / 2, y = H / 2, r = Math.min(W, H) * .42;
+  ctx.fillStyle = '#050504'; ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill('evenodd');
+  ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.lineWidth = 1.5 * DPR; ctx.beginPath(); ctx.moveTo(x - r, y); ctx.lineTo(x + r, y); ctx.moveTo(x, y - r); ctx.lineTo(x, y + r); ctx.stroke();
+  ctx.lineWidth = 4 * DPR; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke();
+}
 function drawTouchAim() {
   const u = player, Wp = WEAPONS[u.w[u.wi].id], L2 = Math.min(Wp.range, 520), cs = Math.cos(u.ang), sn = Math.sin(u.ang);
   const a = proj(u.x + cs * 30, 22, u.y + sn * 30), b = proj(u.x + cs * L2, 22, u.y + sn * L2);
@@ -1895,6 +2057,11 @@ function drawMinimap() {
     mctx.fillRect(u.x * sx - 2, u.y * sy - 2, 4, 4);
   }
   if (player && player.alive) { mctx.save(); mctx.translate(player.x * sx, player.y * sy); mctx.rotate(player.ang); mctx.fillStyle = '#fff'; mctx.beginPath(); mctx.moveTo(6, 0); mctx.lineTo(-4, -4); mctx.lineTo(-4, 4); mctx.closePath(); mctx.fill(); mctx.restore(); }
+  if (FPSV) { // cone de visão
+    const a = player.ang, h2 = Math.atan(Math.tan(cam.fov * Math.PI / 360) * W / H), R = Math.min(70, w * .3);
+    mctx.fillStyle = 'rgba(255,255,255,.13)'; mctx.beginPath(); mctx.moveTo(player.x * sx, player.y * sy); mctx.arc(player.x * sx, player.y * sy, R, a - h2, a + h2); mctx.closePath(); mctx.fill();
+    return;
+  }
   const vw = W / cam.z, vh = H / cam.z; mctx.strokeStyle = 'rgba(255,255,255,.35)'; mctx.lineWidth = 1; mctx.strokeRect((cam.x - vw / 2) * sx, (cam.y - vh / 2) * sy, vw * sx, vh * sy);
 }
 
@@ -1951,7 +2118,7 @@ function updateHUD() {
     $('tbAb').classList.toggle('ready', abReady);
     $('tbGren').textContent = u.cls === 'engenheiro' ? `MINA ${u.minesLeft}` : `GRAN ${u.gren}`;
     $('tbDig').style.visibility = u.cls === 'engenheiro' ? 'visible' : 'hidden';
-    $('tbZoom').textContent = cam.zoomOut ? 'PERTO' : 'LONGE';
+    $('tbZoom').textContent = settings.fps ? 'MAPA' : cam.zoomOut ? 'FPS' : 'LONGE';
   }
   // captura
   const inF = u.alive && !u.downed ? flags.find(f => d2(u.x, u.y, f.x, f.y) < FLAG_R * FLAG_R) : null;
@@ -2080,6 +2247,8 @@ $('btnQuit').onclick = toMenu;
 $('btnAgain').onclick = () => { if (NET.role === 'host') { backToLobby(); return; } $('inTeam').value = teamNames[0]; pickEnemyName(); startGame(); };
 $('btnMenu2').onclick = toMenu;
 $('btnSound').onclick = () => { settings.sound = !settings.sound; $('btnSound').textContent = 'Som: ' + (settings.sound ? 'ligado' : 'desligado'); };
+$('btnView').onclick = () => cycleView(true);
+$('btnView').textContent = 'Câmera: ' + (settings.fps ? 'primeira pessoa' : 'tática (de cima)');
 $('btnRain').onclick = () => { settings.rain = !settings.rain; $('btnRain').textContent = 'Chuva: ' + (settings.rain ? 'ligada' : 'desligada'); };
 document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play' && !NET.role) pauseGame(); });
 
@@ -2439,7 +2608,7 @@ function visualShot(u) {
   for (let i = 0; i < Math.min(Wp.pellets, 4); i++) { const a = u.ang + (Math.random() + Math.random() - 1) * Wp.spread; bullets.push({ x: mx, y: my, vx: Math.cos(a) * Wp.speed, vy: Math.sin(a) * Wp.speed, range: Wp.range, trav: 0, head: false, team: u.team }); }
   parts.push({ x: mx + Math.cos(u.ang) * 4, y: my + Math.sin(u.ang) * 4, vx: 0, vy: 0, life: .05, max: .05, size: Wp.thick * 3 + 4, type: 'flash' });
   SFX.play(Wp.snd, u.x, u.y);
-  if (u === player) cam.shake = Math.max(cam.shake, Wp.dmg > 50 ? 5 : Wp.pellets > 1 ? 4 : 1.4);
+  if (u === player) cam.shake = Math.max(cam.shake, Wp.dmg > 50 ? 5 : Wp.pellets > 1 ? 4 : 1.4), vmKick = 1;
   return Wp.rate;
 }
 function clientUpdate(dt) {
