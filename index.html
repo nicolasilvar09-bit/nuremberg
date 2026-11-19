@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Terra de Ninguém</title>
+<title>Nuremberg</title>
 <meta name="theme-color" content="#14130f">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-180.png">
@@ -257,7 +257,7 @@ body.touch #orderTag{top:78px}
 <!-- MENU -->
 <div id="menu" class="screen">
   <div class="card">
-    <div class="title"><img class="logo" src="icon-192.png" alt="" width="96" height="96"><h1>Terra de <span>Ninguém</span></h1><p>20 contra 20 · trincheiras · conquista de território</p></div>
+    <div class="title"><img class="logo" src="icon-192.png" alt="" width="96" height="96"><h1>Nurem<span>berg</span></h1><p>20 contra 20 · trincheiras · conquista de território</p></div>
     <div class="teams">
       <div class="team t0">
         <h3>Sua equipe <span class="lead">Você é o líder</span></h3>
@@ -395,7 +395,7 @@ body.touch #orderTag{top:78px}
 <script>
 'use strict';
 /* =========================================================
-   TERRA DE NINGUÉM — protótipo (offline: você + bots)
+   NUREMBERG — protótipo (offline: você + bots)
    ========================================================= */
 const VERSION = '0.1';
 const $ = id => document.getElementById(id);
@@ -2507,7 +2507,7 @@ function renderLobby() {
   if (!NET.role) return;
   $('lobCode').textContent = NET.code;
   const link = roomLink(); $('lobLink').value = link;
-  $('btnZap').href = 'https://wa.me/?text=' + encodeURIComponent('Bora jogar Terra de Ninguém comigo? Entra na minha sala ' + NET.code + ': ' + link);
+  $('btnZap').href = 'https://wa.me/?text=' + encodeURIComponent('Bora jogar Nuremberg comigo? Entra na minha sala ' + NET.code + ': ' + link);
   const host = NET.role === 'host', L = lobbyView();
   $('btnLobStart').classList.toggle('hidden', !host); $('lobDiffWrap').classList.toggle('hidden', !host);
   if (!L) { $('lobStatus').textContent = 'Procurando a sala…'; for (let t = 0; t < 2; t++) { $('lobSlots' + t).innerHTML = ''; $('lobT' + t + 'name').textContent = t ? 'Equipe 2' : 'Equipe 1'; $('btnTeam' + t).classList.add('hidden'); $('lobT' + t + 'input').classList.add('hidden'); } return; }
