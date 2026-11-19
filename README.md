@@ -31,4 +31,8 @@ Alterações: orientação e escala normalizadas, malha simplificada, texturas r
 - Escopeta (SPAS-12): "Low-Poly SPAS-12" por TastyTony — https://sketchfab.com/3d-models/low-poly-spas-12-c95154ea2348443e9195250a6ad122cb
 - Pistola (M1911): "Colt M1911" por b0ho — https://sketchfab.com/3d-models/colt-m1911-6b20f04b583a4c4a9d009c0412f01678
 
-Braços, luvas e o resto do jogo são feitos por código.
+## Créditos dos soldados (pasta `chars/`)
+- Personagens: **Microsoft Rocketbox Avatar Library**, licença MIT (Copyright (c) 2020 Microsoft Corporation) — https://github.com/microsoft/Microsoft-Rocketbox. Avatares Military_Male_01, Military_Male_03, Military_Female_01 e Military_Female_02 (os mesmos do NK Mobile: GLB, texturas de 512 px, escala em metros). Licença em `chars/LICENSE-Rocketbox.txt`.
+- Animações: parado, andar, correr e agachar da Rocketbox (MIT); andar, correr, agachar e queda da **KinemIQ Free Animation Pack** / **Quaternius Universal Animation Library**, licença CC0, adaptadas ao esqueleto.
+
+Braços em primeira pessoa, luvas e o resto do jogo são feitos por código.

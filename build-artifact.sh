@@ -12,6 +12,8 @@ const guns = {};
 for (const f of fs.readdirSync("guns")) if (f.endsWith(".glb")) guns[f.slice(0, -4)] = "data:model/gltf-binary;base64," + fs.readFileSync("guns/" + f).toString("base64");
 const tag = "GLTFLoader.js\"></script>";
 const i = s.indexOf(tag); if (i < 0) throw new Error("GLTFLoader tag não encontrada");
-s = s.slice(0, i + tag.length) + "\n<script>window.GUN_DATA=" + JSON.stringify(guns) + ";</script>" + s.slice(i + tag.length);
+const chars = { kin: JSON.parse(fs.readFileSync("chars/anims_kin.json", "utf8")) };
+for (const f of fs.readdirSync("chars")) if (f.endsWith(".glb")) chars[f.slice(0, -4)] = "data:model/gltf-binary;base64," + fs.readFileSync("chars/" + f).toString("base64");
+s = s.slice(0, i + tag.length) + "\n<script>window.GUN_DATA=" + JSON.stringify(guns) + ";window.CHAR_DATA=" + JSON.stringify(chars) + ";</script>" + s.slice(i + tag.length);
 fs.writeFileSync("terra-de-ninguem.html", s);
 '

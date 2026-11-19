@@ -397,6 +397,7 @@ body.touch #orderTag{top:78px}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/utils/SkeletonUtils.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
 <script>
 'use strict';
@@ -1689,25 +1690,30 @@ function makeSoldier(u) {
 }
 function clearSoldiers() { for (const u of units) if (u.g) { scene.remove(u.g); u.g = null; } }
 function syncUnits(dt) {
-  const my = myTeam();
+  const my = myTeam(); humanFrame();
   for (const u of units) {
     let g = u.g;
-    if (!g || g.userData.cls !== u.cls) { if (g) scene.remove(g); g = u.g = makeSoldier(u); }
+    if (!g || g.userData.cls !== u.cls) { if (g) scene.remove(g); g = u.g = makeSoldier(u); if (u.h) g.add(u.h.g); }
     const ud = g.userData;
-    const vis = u.alive && (my < 0 || u.team === my || visible[my].has(u.id)) && !(u === player && FPSV);
-    g.visible = vis; if (!vis) continue;
+    if (HUM.ready && !u.h) { u.h = buildHuman(u); u.h.g.scale.setScalar(MS / 1.35); g.add(u.h.g); ud.body.visible = false; }
+    const H = u.h, seen = my < 0 || u.team === my || visible[my].has(u.id);
+    if (H && u.alive) H.seen = seen;
+    let vis = u.alive && seen && !(u === player && FPSV);
+    if (H && !u.alive && H.seen && (H.wasAlive || H.deadT < 5) && !(u === player && FPSV)) vis = true; // corpo caindo
+    g.visible = vis; if (!vis) { if (H) { H.wasAlive = u.alive; if (!u.alive) H.deadT = 9; } continue; }
     const gh = groundH(u.x, u.y); ud.vy += (gh - ud.vy) * Math.min(1, dt * 10);
     g.position.set(u.x, ud.vy, u.y); g.rotation.y = -u.ang;
     const wid = u.w[u.wi] ? u.w[u.wi].id : 'pistola';
     if (ud.wid !== wid) { ud.wid = wid; const Wp = WEAPONS[wid]; ud.gun.scale.set(Wp.len + 6, Wp.thick, Wp.thick); ud.gun.position.x = 4 + (Wp.len + 6) / 2; }
     // arma de verdade só em quem está perto da câmera (longe fica o bloco simples, mais leve)
-    const RG = REALGUN[wid], near = (u.x - cam.x) ** 2 + (u.y - cam.y) ** 2 < 700 * 700;
+    const RG = REALGUN[wid], near = !H && (u.x - cam.x) ** 2 + (u.y - cam.y) ** 2 < 700 * 700;
     if (near && RG && RG.obj) {
       if (ud.realId !== wid) { if (ud.real) ud.body.remove(ud.real); ud.real = worldGun(wid); ud.real.rotation.y = -Math.PI / 2; ud.real.scale.setScalar(21); ud.real.position.set(3, 24.5, 3.4); ud.body.add(ud.real); ud.realId = wid; }
       ud.real.visible = true; ud.gun.visible = false;
     } else { if (ud.real) ud.real.visible = false; ud.gun.visible = true; if (near && RG) loadGun(wid); }
     ud.ring.material = u.isPlayer ? SM.ringMe : (my < 0 || u.team === my) ? SM.ring[u.team] : SM.ringEnemy;
-    ud.ring.visible = !u.downed && (u.prot <= 0 || Math.sin(time * 20) > 0);
+    ud.ring.visible = u.alive && !u.downed && (u.prot <= 0 || Math.sin(time * 20) > 0);
+    if (H) { ud.body.visible = false; animateHuman(u, H, dt); continue; }
     // pose
     const lie = u.downed ? Math.PI / 2 : 0;
     ud.body.rotation.z += (lie - ud.body.rotation.z) * Math.min(1, dt * 8);
@@ -1821,6 +1827,165 @@ function loadGun(k, cb) {
   }, undefined, () => { r.failed = true; r.cbs = null; });
 }
 function worldGun(k) { const r = REALGUN[k], c = r.obj.clone(); c.traverse(n => { if (n.isMesh) n.material = LAMB.get(n.material) || n.material; }); return c; }
+
+// --- soldados realistas (os mesmos do NK: Microsoft Rocketbox, licença MIT) ---
+// esqueleto + texturas de verdade + animações de captura de movimento; por cima, os ossos são ajustados
+// por código (mãos seguram a arma com IK de 2 ossos, tronco torce para a mira, coice ao atirar)
+const AVS = ['m_soldier1', 'm_soldier2', 'f_soldier1', 'f_soldier2'];
+const HUM = { src: {}, clips: {}, kin: null, ready: false, loading: false };
+const MS = 30; // 1 metro do modelo = 30 unidades do mapa (soldado de 1,8 m ≈ 54)
+function charURL(f) { return (window.CHAR_DATA && CHAR_DATA[f]) || `chars/${f}.glb`; }
+function loadHumans() {
+  if (HUM.loading || !THREE.GLTFLoader || !THREE.SkeletonUtils) return; HUM.loading = true;
+  const L = new THREE.GLTFLoader(); let left = AVS.length + 2;
+  const done = () => {
+    if (--left) return;
+    if (HUM.kin) for (const c of HUM.kin) HUM.clips[c.name] = c; // as animações KinemIQ substituem andar/correr/agachar
+    HUM.ready = AVS.some(k => HUM.src[k]) && !!HUM.clips.m_idle;
+  };
+  L.load(charURL('anims'), g => { for (const c of g.animations) HUM.clips[c.name] = c; done(); }, undefined, done);
+  (window.CHAR_DATA && CHAR_DATA.kin ? Promise.resolve(CHAR_DATA.kin) : fetch('chars/anims_kin.json').then(r => r.json()))
+    .then(j => { HUM.kin = j.clips.map(c => THREE.AnimationClip.parse(c)); done(); }).catch(done);
+  for (const k of AVS) L.load(charURL(k), g => {
+    g.scene.traverse(o => {
+      if (!o.isMesh) return; const m = o.material;
+      if (m.map) { m.map.encoding = THREE.LinearEncoding; m.map.anisotropy = 2; m.map.needsUpdate = true; }
+      o.material = new THREE.MeshLambertMaterial({ name: m.name, map: m.map || null, alphaTest: m.alphaTest || 0, side: m.side, skinning: true }); // r128: sem skinning o corpo fica na pose de fábrica
+      o.castShadow = !isTouch; o.receiveShadow = false; o.frustumCulled = false;
+    });
+    HUM.src[k] = g.scene; done();
+  }, undefined, done);
+}
+const HBONES = ['Bip01_Spine', 'Bip01_Spine1', 'Bip01_Spine2', 'Bip01_Neck', 'Bip01_Head', 'Bip01_R_UpperArm', 'Bip01_R_Forearm', 'Bip01_R_Hand', 'Bip01_L_UpperArm', 'Bip01_L_Forearm', 'Bip01_L_Hand'];
+// cor de cada equipe no capacete, no colete e (de leve) na farda
+const HTINT = [{ gear: 0xd8dcc0, body: 0xffffff }, { gear: 0x8ea2c8, body: 0xb4c0d6 }];
+function buildHuman(u) {
+  const ks = AVS.filter(k => HUM.src[k]), k = ks[u.id % ks.length], px = k[0] === 'f' ? 'f_' : 'm_';
+  const root = THREE.SkeletonUtils.clone(HUM.src[k]); root.rotation.y = Math.PI / 2; // o avatar olha para +z; aqui a frente é +x
+  const mats = [];
+  root.traverse(o => {
+    if (!o.isMesh) return; o.material = o.material.clone(); o.frustumCulled = false; mats.push(o.material);
+    const n = o.material.name.toLowerCase(), t = HTINT[u.team];
+    if (/knife|pistol|shotgun|machinegun/.test(n)) o.material.visible = false;
+    else if (/helmet|equipment/.test(n)) o.material.color.setHex(t.gear);
+    else if (/body/.test(n)) o.material.color.setHex(t.body);
+  });
+  const tilt = new THREE.Group(); tilt.add(root);
+  const g = new THREE.Group(); g.add(tilt);
+  const b = {}; for (const n of HBONES) b[n] = root.getObjectByName(n);
+  const mixer = new THREE.AnimationMixer(root), act = {};
+  for (const a of ['idle', 'walk', 'run', 'crouch', 'cwalk']) { const c = HUM.clips[px + a] || HUM.clips['m_' + a]; if (c) { act[a] = mixer.clipAction(c); act[a].play(); act[a].setEffectiveWeight(a === 'idle' ? 1 : 0); act[a].time = Math.random() * c.duration; } }
+  const dc = HUM.clips[px + 'death'] || HUM.clips.m_death, death = dc ? mixer.clipAction(dc) : null;
+  if (death) { death.setLoop(THREE.LoopOnce, 1); death.clampWhenFinished = true; death.enabled = false; }
+  const gun = new THREE.Group(); gun.rotation.order = 'YXZ'; g.add(gun);
+  return { g, tilt, root, b, mixer, act, death, mats, gun, gunId: '', w: { idle: 1, walk: 0, run: 0, crouch: 0, cwalk: 0 }, sp: 0, lx: u.x, ly: u.y, twist: 0, kick: 0, shotT: u.shotT, pk: 0, wasAlive: u.alive, deadT: 9, fr: u.id, acc: 0 };
+}
+function humanGun(H, wid) {
+  if (H.gunId === wid) return; const r = REALGUN[wid];
+  if (r && !r.obj) { loadGun(wid); if (H.gunId) return; }
+  while (H.gun.children.length) H.gun.remove(H.gun.children[0]);
+  if (r && r.obj) { H.gun.add(worldGun(wid)); H.gunId = wid; }
+  else { const len = r && r.pistol ? .2 : .7, m = new THREE.Mesh(new THREE.BoxGeometry(.05, .08, len), SM.gun); m.position.z = -len / 2 + .1; H.gun.add(m); H.gunId = ''; }
+}
+// ---------- ajuste de ossos por código ----------
+const _A = new THREE.Vector3(), _B = new THREE.Vector3(), _C = new THREE.Vector3(), _D = new THREE.Vector3(), _E = new THREE.Vector3(), _P = new THREE.Vector3(), _H1 = new THREE.Vector3(), _H2 = new THREE.Vector3(), _pole = new THREE.Vector3();
+const _Q1 = new THREE.Quaternion(), _Q2 = new THREE.Quaternion(), _Q3 = new THREE.Quaternion();
+const _UP = new THREE.Vector3(0, 1, 0), _F = new THREE.Vector3(), _R = new THREE.Vector3();
+function aimBone(bone, child, dir) {
+  bone.getWorldPosition(_A); child.getWorldPosition(_B);
+  _B.sub(_A).normalize(); _C.copy(dir).normalize();
+  _Q1.setFromUnitVectors(_B, _C); bone.getWorldQuaternion(_Q2); _Q1.multiply(_Q2);
+  bone.parent.getWorldQuaternion(_Q3).invert(); bone.quaternion.copy(_Q3.multiply(_Q1)); bone.updateMatrixWorld(true);
+}
+function rotWorld(bone, axis, ang) {
+  _Q1.setFromAxisAngle(axis, ang); bone.getWorldQuaternion(_Q2); _Q1.multiply(_Q2);
+  bone.parent.getWorldQuaternion(_Q3).invert(); bone.quaternion.copy(_Q3.multiply(_Q1)); bone.updateMatrixWorld(true);
+}
+function ik2(up, lo, end, target, pole) {
+  if (!up || !lo || !end) return;
+  const S = up.getWorldPosition(new THREE.Vector3()), M = lo.getWorldPosition(_D), Eh = end.getWorldPosition(_E);
+  const l1 = S.distanceTo(M), l2 = M.distanceTo(Eh);
+  const Dv = _P.copy(target).sub(S); let d = Dv.length(); if (d < 1e-4) return;
+  const dir = Dv.divideScalar(d); d = clamp(d, Math.abs(l1 - l2) + .01 * MS, l1 + l2 - .005 * MS);
+  const a1 = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a1 * a1));
+  _pole.copy(pole).addScaledVector(dir, -pole.dot(dir)).normalize();
+  const elbow = S.clone().addScaledVector(dir, a1).addScaledVector(_pole, h);
+  aimBone(up, lo, _H1.copy(elbow).sub(S));
+  aimBone(lo, end, _H2.copy(target).sub(elbow));
+}
+const _frus = new THREE.Frustum(), _pm = new THREE.Matrix4(), _sph = new THREE.Sphere();
+function humanFrame() { _pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _frus.setFromProjectionMatrix(_pm); }
+function animateHuman(u, H, dt) {
+  // velocidade real (serve também para quem chega pela rede)
+  const dist = Math.hypot(u.x - H.lx, u.y - H.ly); H.lx = u.x; H.ly = u.y;
+  const spRaw = dist > 120 ? 0 : dist / Math.max(dt, 1e-3) / MS; H.sp += (spRaw - H.sp) * Math.min(1, dt * 8);
+  // morreu: animação de queda (o corpo fica alguns segundos)
+  if (H.wasAlive && !u.alive && H.death) {
+    for (const n in H.act) H.act[n].setEffectiveWeight(0);
+    H.death.enabled = true; H.death.reset(); H.death.setEffectiveWeight(1); H.death.timeScale = 1.15; H.death.play(); H.deadT = 0; H.gun.visible = false;
+    H.root.rotation.y = Math.PI / 2; H.tilt.rotation.z = 0; H.tilt.position.y = 0;
+  }
+  if (!H.wasAlive && u.alive) { if (H.death) { H.death.stop(); H.death.enabled = false; } H.deadT = 9; H.pk = u.downed ? 1 : 0; H.sp = 0; }
+  H.wasAlive = u.alive;
+  _sph.set(_A.set(u.x, 30, u.y), 70);
+  const inView = _frus.intersectsSphere(_sph); H.root.visible = inView;
+  if (!u.alive) { H.deadT += dt; if (inView && H.deadT < 3) H.mixer.update(dt); return; }
+  H.gun.visible = !u.downed;
+  if (!inView) return;
+  // mistura das animações pela velocidade
+  const sp = H.sp, cr = u.deployed, tw = { idle: 0, walk: 0, run: 0, crouch: 0, cwalk: 0 };
+  if (u.downed) tw.idle = 1;
+  else if (cr) tw.crouch = 1;
+  else if (sp < .35) tw.idle = 1;
+  else if (sp < 2.6) tw.walk = 1;
+  else { const k = clamp((sp - 2.6) / 1.4, 0, 1); tw.run = k; tw.walk = 1 - k; }
+  // andando de lado gira as pernas; de ré, anda ao contrário
+  let twistT = 0, back = false;
+  if (sp > .35 && !u.downed) {
+    const mv = Math.atan2(u.mvy, u.mvx), rel = angDiff(u.ang, mv);
+    if (Math.abs(u.mvx) + Math.abs(u.mvy) > .05) { if (Math.abs(rel) > 1.9) { back = true; twistT = clamp(angDiff(Math.PI, rel), -.9, .9); } else twistT = clamp(rel, -1.1, 1.1); }
+  }
+  H.twist += (twistT - H.twist) * Math.min(1, dt * 7);
+  const k = Math.min(1, dt * 8);
+  for (const n in H.act) { H.w[n] += ((tw[n] || 0) - H.w[n]) * k; H.act[n].setEffectiveWeight(H.w[n]); }
+  if (H.act.walk) H.act.walk.timeScale = clamp(sp / 1.45, .5, 2.2) * (back ? -1 : 1);
+  if (H.act.run) H.act.run.timeScale = clamp(sp / 4.6, .7, 1.5) * (back ? -1 : 1);
+  // longe: anima menos vezes por segundo (economiza no celular)
+  const d2c = (u.x - cam.x) ** 2 + (u.y - cam.y) ** 2, every = d2c > 1800 * 1800 ? 4 : d2c > 800 * 800 ? 2 : 1;
+  H.acc += dt; H.fr++;
+  if (H.fr % every === 0) { H.mixer.update(H.acc); H.acc = 0; }
+  // ferido no chão: deita aos poucos
+  H.pk += ((u.downed ? 1 : 0) - H.pk) * Math.min(1, dt * 3.8);
+  H.root.rotation.y = Math.PI / 2 - (u.downed ? 0 : H.twist);
+  H.tilt.rotation.z = -Math.PI / 2 * H.pk; H.tilt.position.y = (.16 - Math.sin(H.pk * Math.PI) * .3) * H.pk;
+  H.g.updateMatrixWorld(true);
+  if (u.downed || every > 2) return; // muito longe: sem ajuste fino de ossos
+  const B = H.b, a = u.ang;
+  _F.set(Math.cos(a), 0, Math.sin(a)); _R.set(-Math.sin(a), 0, Math.cos(a));
+  if (u.shotT !== H.shotT) { H.shotT = u.shotT; H.kick += 1; }
+  H.kick *= Math.exp(-dt * 11);
+  if (B.Bip01_Spine && Math.abs(H.twist) > .01) rotWorld(B.Bip01_Spine, _UP, H.twist * .9); // tronco volta a olhar para a mira
+  if (B.Bip01_Spine2 && sp < .35) rotWorld(B.Bip01_Spine2, _R, Math.sin(time * 1.7 + u.id) * .018); // respiração
+  if (B.Bip01_Spine1 && H.kick > .01) rotWorld(B.Bip01_Spine1, _R, -H.kick * .035);
+  // arma nas mãos
+  if (!B.Bip01_Spine2) return;
+  const wid = u.w[u.wi] ? u.w[u.wi].id : 'pistola', r = REALGUN[wid], pistol = !!(r && r.pistol);
+  humanGun(H, wid);
+  const P = B.Bip01_Spine2.getWorldPosition(new THREE.Vector3());
+  P.addScaledVector(_UP, (pistol ? .06 : .05) * MS).addScaledVector(_R, (pistol ? .02 : .1) * MS).addScaledVector(_F, (pistol ? .45 : .32) * MS);
+  if (cr) P.addScaledVector(_UP, -.02 * MS);
+  P.addScaledVector(_F, -H.kick * .035 * MS);
+  const rel = u.reloadT > 0;
+  H.gun.position.copy(H.g.worldToLocal(P.clone()));
+  H.gun.rotation.set((rel ? -.5 : 0) + H.kick * .06, -Math.PI / 2 + H.twist * 0, rel ? .5 : 0);
+  H.gun.updateMatrixWorld(true);
+  const fore = r ? r.fore : -.32;
+  const grip = H.gun.localToWorld(new THREE.Vector3(0, -.08, .06)), foreP = H.gun.localToWorld(new THREE.Vector3(0, -.06, rel ? -.1 : fore));
+  if (rel) foreP.addScaledVector(_UP, -.1 * MS);
+  ik2(B.Bip01_R_UpperArm, B.Bip01_R_Forearm, B.Bip01_R_Hand, grip, _pole.set(0, -1, 0).addScaledVector(_R, .7));
+  ik2(B.Bip01_L_UpperArm, B.Bip01_L_Forearm, B.Bip01_L_Hand, foreP, _pole.set(0, -1, 0).addScaledVector(_R, -.6));
+}
+setTimeout(loadHumans, 300);
 
 // --- arma e braços em primeira pessoa (cena própria em metros, desenhada por cima do mundo) ---
 const vmScene = new THREE.Scene(), vmCam = new THREE.PerspectiveCamera(60, 1, .01, 20);
@@ -2041,7 +2206,7 @@ function drawLabels() {
   const my = myTeam();
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const u of units) {
-    if (!u.g || !u.g.visible) continue;
+    if (!u.g || !u.g.visible || !u.alive) continue;
     const gy = u.g.position.y;
     if (u.downed) {
       if (u.team === my) { const q = proj(u.x, gy + 26, u.y); if (!onScr(q)) continue; const a = .5 + .5 * Math.sin(time * 6), s = DPR; ctx.fillStyle = `rgba(225,60,50,${a})`; ctx.fillRect(q[0] - 3 * s, q[1] - 8 * s, 6 * s, 16 * s); ctx.fillRect(q[0] - 8 * s, q[1] - 3 * s, 16 * s, 6 * s); }
