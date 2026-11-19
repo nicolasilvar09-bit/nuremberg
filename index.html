@@ -396,6 +396,7 @@ body.touch #orderTag{top:78px}
 <div id="rotate" class="hidden">Gire o celular<small>O front fica melhor na horizontal.</small></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
 <script>
 'use strict';
@@ -1699,6 +1700,12 @@ function syncUnits(dt) {
     g.position.set(u.x, ud.vy, u.y); g.rotation.y = -u.ang;
     const wid = u.w[u.wi] ? u.w[u.wi].id : 'pistola';
     if (ud.wid !== wid) { ud.wid = wid; const Wp = WEAPONS[wid]; ud.gun.scale.set(Wp.len + 6, Wp.thick, Wp.thick); ud.gun.position.x = 4 + (Wp.len + 6) / 2; }
+    // arma de verdade só em quem está perto da câmera (longe fica o bloco simples, mais leve)
+    const RG = REALGUN[wid], near = (u.x - cam.x) ** 2 + (u.y - cam.y) ** 2 < 700 * 700;
+    if (near && RG && RG.obj) {
+      if (ud.realId !== wid) { if (ud.real) ud.body.remove(ud.real); ud.real = worldGun(wid); ud.real.rotation.y = -Math.PI / 2; ud.real.scale.setScalar(21); ud.real.position.set(3, 24.5, 3.4); ud.body.add(ud.real); ud.realId = wid; }
+      ud.real.visible = true; ud.gun.visible = false;
+    } else { if (ud.real) ud.real.visible = false; ud.gun.visible = true; if (near && RG) loadGun(wid); }
     ud.ring.material = u.isPlayer ? SM.ringMe : (my < 0 || u.team === my) ? SM.ring[u.team] : SM.ringEnemy;
     ud.ring.visible = !u.downed && (u.prot <= 0 || Math.sin(time * 20) > 0);
     // pose
@@ -1774,44 +1781,136 @@ function proj(x, y, z) {
   _v.applyMatrix4(camera.projectionMatrix); return [(_v.x * .5 + .5) * W, (-_v.y * .5 + .5) * H, _v.z];
 }
 
-// --- arma em primeira pessoa (cena própria, desenhada por cima) ---
-const vmScene = new THREE.Scene(), vmCam = new THREE.PerspectiveCamera(55, 1, .5, 300);
-vmScene.add(new THREE.HemisphereLight(0xd8d6d0, 0x3c3226, 1.05));
-{ const d = new THREE.DirectionalLight(0xffe4c0, .7); d.position.set(-1, 2, 1); vmScene.add(d); }
-const vm = { root: new THREE.Group(), key: '', flash: null, walk: 0, swayX: 0, swayY: 0, lastAng: 0, recoil: 0 };
-vmScene.add(vm.root);
+// --- armas de verdade (mesmos modelos 3D do NK · Sketchfab, CC BY 4.0, créditos no README) ---
+// cada modelo vem em metros, apontando para -z, com a origem perto do punho
+const REALGUN = {
+  rifle: { f: 'm24', fore: -0.38 }, fuzil: { f: 'm416', fore: -0.3 }, fuzilR: { f: 'scarl', fore: -0.28 }, smg: { f: 'ump45', fore: -0.16 },
+  carabina: { f: 'sks', fore: -0.33 }, mg: { f: 'm249', fore: -0.36 }, escopeta: { f: 's1897', fore: -0.36 }, pistola: { f: 'm1911', fore: 0.02, pistol: true },
+};
+// reflexo de ambiente (céu nublado em cima, terra embaixo): o metal da arma brilha de verdade
+const ENV_TEX = (() => {
+  try {
+    const sc = new THREE.Scene(), g = new THREE.SphereGeometry(10, 32, 16), p = g.attributes.position, col = [], c = new THREE.Color();
+    const top = new THREE.Color(0x7f8a94), hor = new THREE.Color(0xd8d4c8), gnd = new THREE.Color(0x4a4032);
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i) / 10; if (y >= 0) c.copy(hor).lerp(top, Math.pow(y, .6)); else c.copy(hor).lerp(gnd, Math.min(1, -y * 3)); col.push(c.r, c.g, c.b); }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    sc.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide })));
+    const sunM = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff })); sunM.position.set(-4, 6, 5); sc.add(sunM);
+    const pm = new THREE.PMREMGenerator(renderer), rt = pm.fromScene(sc, .02); pm.dispose(); return rt.texture;
+  } catch (e) { return null; }
+})();
+const LAMB = new Map(); // material da 1ª pessoa → versão leve para os soldados do mapa
+function loadGun(k, cb) {
+  const r = REALGUN[k]; if (!r || r.failed) return;
+  if (r.obj) { if (cb) cb(); return; }
+  if (r.cbs) { if (cb) r.cbs.push(cb); return; }
+  r.cbs = cb ? [cb] : [];
+  if (!THREE.GLTFLoader) { r.failed = true; return; }
+  const src = (window.GUN_DATA && GUN_DATA[r.f]) || `guns/${r.f}.glb`;
+  new THREE.GLTFLoader().load(src, gl => {
+    const o = gl.scene;
+    o.traverse(n => {
+      if (!n.isMesh) return; const m = n.material;
+      for (const t of [m.map, m.normalMap]) if (t) { t.encoding = THREE.LinearEncoding; t.needsUpdate = true; }
+      n.material = new THREE.MeshStandardMaterial({ map: m.map || null, normalMap: m.normalMap || null, color: m.map ? 0xffffff : m.color, metalness: .5, roughness: .48, envMap: ENV_TEX, envMapIntensity: 1.15 });
+      LAMB.set(n.material, new THREE.MeshLambertMaterial({ map: m.map || null, color: m.map ? 0xffffff : m.color }));
+      n.castShadow = false; n.receiveShadow = false;
+    });
+    const b = new THREE.Box3().setFromObject(o); r.obj = o; r.muz = b.min.z; r.top = b.max.y;
+    const cbs = r.cbs; r.cbs = null; for (const f of cbs) f();
+  }, undefined, () => { r.failed = true; r.cbs = null; });
+}
+function worldGun(k) { const r = REALGUN[k], c = r.obj.clone(); c.traverse(n => { if (n.isMesh) n.material = LAMB.get(n.material) || n.material; }); return c; }
+
+// --- arma e braços em primeira pessoa (cena própria em metros, desenhada por cima do mundo) ---
+const vmScene = new THREE.Scene(), vmCam = new THREE.PerspectiveCamera(60, 1, .01, 20);
+vmScene.add(new THREE.HemisphereLight(0xdcdad2, 0x3c3226, .95));
+{ const d = new THREE.DirectionalLight(0xffe4c0, .85); d.position.set(-1, 2, 1.2); vmScene.add(d); }
+const VM = new THREE.Group(); VM.scale.setScalar(.62); vmScene.add(VM);
+const vmGunHold = new THREE.Group(); VM.add(vmGunHold);
+const vmArms = new THREE.Group(); VM.add(vmArms);
+// tecido camuflado da manga (cores de cada equipe), feito por código
+function camoTex(cols) { return canvasTex(128, 128, g => { g.fillStyle = cols[0]; g.fillRect(0, 0, 128, 128); for (let k = 1; k < cols.length; k++) for (let i = 0; i < 9; i++) { g.fillStyle = cols[k]; g.beginPath(); const x = Math.random() * 128, y = Math.random() * 128; for (let a = 0; a < 7; a++) { const r = 7 + Math.random() * 13, t = a / 7 * Math.PI * 2; g.lineTo(x + Math.cos(t) * r * 1.6, y + Math.sin(t) * r); } g.fill(); } const d = g.getImageData(0, 0, 128, 128); for (let i = 0; i < d.data.length; i += 4) { const n = (Math.random() - .5) * 16 + ((i / 4) % 2 ? 4 : -4); d.data[i] += n; d.data[i + 1] += n; d.data[i + 2] += n; } g.putImageData(d, 0, 0); }); }
+const CAMO = [camoTex(['#59603f', '#3d4429', '#6f6a48', '#2b2d22']), camoTex(['#4f5966', '#36404d', '#6b7480', '#262c35'])];
+for (const t of CAMO) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 1.5); }
+const vmSleeveMat = new THREE.MeshStandardMaterial({ map: CAMO[0], roughness: .95 });
+const vmGloveMat = new THREE.MeshStandardMaterial({ color: 0x1d1e21, roughness: .62, emissive: 0x050506 });
+const vmSeamMat = new THREE.MeshStandardMaterial({ color: 0x2a2c2f, roughness: .9, emissive: 0x060607 });
+const vmKnuckMat = new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: .4, metalness: .3, envMap: ENV_TEX, envMapIntensity: .5 });
+const vmUp = new THREE.Vector3(0, 1, 0);
+function vmSeg(g, a, b, r1, r2, mat) {
+  const av = new THREE.Vector3(...a), bv = new THREE.Vector3(...b), d = bv.clone().sub(av);
+  const me = new THREE.Mesh(new THREE.CylinderGeometry(r2, r1, d.length(), 7, 1), mat);
+  me.position.copy(av).add(bv).multiplyScalar(.5); me.quaternion.setFromUnitVectors(vmUp, d.normalize()); g.add(me); return me;
+}
+function vmJoint(g, pos, r, mat, s) { const me = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), mat); me.position.set(...pos); if (s) me.scale.set(...s); g.add(me); return me; }
+// mão direita no punho, esquerda no guarda-mão (muda conforme a arma); ombros ficam fora da tela
+function vmArmPose(side, fore, pistol) {
+  if (side > 0) return { shoulder: [.21, -.44, .32], elbow: [.17, -.27, .15], wrist: [.012, -.105, .075] };
+  if (pistol) return { shoulder: [-.2, -.44, .3], elbow: [-.17, -.26, .12], wrist: [-.035, -.115, .02] };
+  return { shoulder: [-.31, -.46, .2], elbow: [-.2, -.2, fore * .3], wrist: [-.015, -.06, fore - .1] };
+}
+function fillVmArm(g, side, fore, pistol) {
+  for (let i = g.children.length - 1; i >= 0; i--) { const c = g.children[i]; g.remove(c); c.geometry.dispose(); }
+  const s = side, { shoulder, elbow, wrist } = vmArmPose(side, fore, pistol);
+  vmSeg(g, shoulder, elbow, .078, .067, vmSleeveMat);
+  vmSeg(g, elbow, wrist, .066, .047, vmSleeveMat);
+  vmJoint(g, elbow, .066, vmSeamMat, [1, .92, 1]);
+  vmJoint(g, wrist, .052, vmGloveMat, [1.05, .8, 1.2]);
+  const palm = [wrist[0] - s * .008, wrist[1] - .012, wrist[2] - .055];
+  vmJoint(g, palm, .052, vmGloveMat, [.9, .65, 1.25]);
+  // punho da luva por cima da manga, elástico, proteção dos nós dos dedos, 4 dedos e polegar
+  const d = new THREE.Vector3(wrist[0] - elbow[0], wrist[1] - elbow[1], wrist[2] - elbow[2]).normalize(), W = new THREE.Vector3(...wrist);
+  const cuffA = W.clone().addScaledVector(d, -.05), cuffB = W.clone().addScaledVector(d, .012);
+  vmSeg(g, cuffA.toArray(), cuffB.toArray(), .056, .054, vmGloveMat);
+  vmSeg(g, W.clone().addScaledVector(d, -.058).toArray(), cuffA.toArray(), .058, .058, vmSeamMat);
+  vmJoint(g, [palm[0], palm[1] + .03, palm[2] - .004], .03, vmKnuckMat, [1.25, .32, 1.1]);
+  for (let i = 0; i < 4; i++) vmSeg(g, [palm[0] + (i - 1.5) * .02, palm[1] - .004, palm[2] - .03], [palm[0] + (i - 1.5) * .022 - s * .012, palm[1] - .03, palm[2] - .072], .0125, .0105, vmGloveMat);
+  vmSeg(g, [palm[0] + s * .036, palm[1] + .004, palm[2] + .01], [palm[0] + s * .03, palm[1] + .028, palm[2] - .04], .0135, .011, vmGloveMat);
+}
+const vmArmL = new THREE.Group(), vmArmR = new THREE.Group(); vmArms.add(vmArmL, vmArmR);
+const vmFlash = new THREE.Mesh(new THREE.PlaneGeometry(.13, .13), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: .95, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+const vmFlashLight = new THREE.PointLight(0xffb060, 0, 1.6, 2); vmScene.add(vmFlashLight);
+const vm = { key: '', walk: 0, swx: 0, swy: 0, lastAng: 0, lastPitch: 0, recoil: 0, swap: 0 };
 function buildViewmodel(u) {
-  const wid = u.w[u.wi] ? u.w[u.wi].id : 'pistola', key = wid + u.team + u.cls;
-  if (vm.key === key) return; vm.key = key;
-  while (vm.root.children.length) vm.root.remove(vm.root.children[0]);
-  const Wp = WEAPONS[wid], m = SM.team[u.team], pistol = wid === 'pistola';
-  const g = new THREE.Group(); vm.root.add(g);
-  const box = (w, h, d, mat, x, y, z) => { const me = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); me.position.set(x, y, z); g.add(me); return me; };
-  const len = pistol ? 9 : 16 + Wp.len * .55, th = pistol ? 1.6 : 1.4 + Wp.thick * .35;
-  box(th * 1.3, th * 1.9, len, SM.gun, 0, 0, -len / 2);                 // corpo
-  box(th * .7, th * .7, len * .45, SM.gun, 0, th * .35, -len - len * .2); // cano
-  if (!pistol) { box(th * 1.1, th * 2.6, 5, L(0x3a2c1e), 0, -th * .9, 2.5); box(th, th * 2.2, th * 1.2, SM.gun, 0, -th * 1.8, -len * .35); } // coronha e carregador
-  if (wid === 'rifle') { const sc = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.5, 11, 10).rotateX(Math.PI / 2), SM.gun); sc.position.set(0, th * 1.6, -len * .45); g.add(sc); }
-  // braços e mãos
-  box(3.2, 3.2, 12, m.body, 2.5, -3.2, 5.5); box(2.6, 2.6, 3, SM.skin, .6, -1.6, -.5);
-  if (!pistol) { box(3, 3, 12, m.body, -4.5, -3.4, -len * .45 + 6); box(2.6, 2.4, 3, SM.skin, -1.2, -1.4, -len * .5); }
-  vm.flash = new THREE.Mesh(new THREE.PlaneGeometry(7, 7), new THREE.MeshBasicMaterial({ color: 0xffd27a, transparent: true, opacity: .95, depthWrite: false, side: THREE.DoubleSide }));
-  vm.flash.position.set(0, th * .35, -len * 1.45 - 1); vm.flash.visible = false; g.add(vm.flash);
-  vm.len = len;
+  const wid = u.w[u.wi] ? u.w[u.wi].id : 'pistola', r = REALGUN[wid], ready = r && r.obj, key = wid + u.team + (ready ? 'r' : 'b');
+  if (vm.key === key) return;
+  if (vm.key && vm.key.slice(0, -1) !== key.slice(0, -1)) vm.swap = 1; // trocou de arma: abaixa e volta
+  vm.key = key;
+  while (vmGunHold.children.length) vmGunHold.remove(vmGunHold.children[0]);
+  let muz;
+  if (ready) { vmGunHold.add(r.obj.clone()); muz = r.muz; }
+  else { // provisória enquanto o modelo carrega
+    const len = r && r.pistol ? .2 : .62, b = new THREE.Mesh(new THREE.BoxGeometry(.05, .07, len), new THREE.MeshStandardMaterial({ color: 0x1b1c1e, metalness: .5, roughness: .5, envMap: ENV_TEX }));
+    b.position.z = -len / 2 + .08; vmGunHold.add(b); muz = -len + .08;
+    loadGun(wid, () => { vm.key = ''; });
+  }
+  vmFlash.position.set(0, .012, muz - .04); vmGunHold.add(vmFlash);
+  const pistol = !!(r && r.pistol), fore = r ? r.fore : -.32;
+  fillVmArm(vmArmL, -1, fore, pistol); fillVmArm(vmArmR, 1, 0, pistol);
+  vmSleeveMat.map = CAMO[u.team]; vmSleeveMat.needsUpdate = true;
 }
 function renderViewmodel(dt) {
   const u = player; buildViewmodel(u);
   const moving = Math.abs(u.mvx) + Math.abs(u.mvy) > .1 && !u.deployed;
   if (moving) vm.walk += dt * CLASSES[u.cls].speed * .06;
-  const turn = angDiff(vm.lastAng, u.ang); vm.lastAng = u.ang;
-  vm.swayX = lerp(vm.swayX, clamp(-turn * 40, -3, 3), Math.min(1, dt * 8));
+  // a arma atrasa um pouco ao virar (peso), balança com os passos e respira parada
+  const dy = angDiff(vm.lastAng, u.ang), dp = cam.pitch - vm.lastPitch; vm.lastAng = u.ang; vm.lastPitch = cam.pitch;
+  const sk = 1 - Math.exp(-dt * 9);
+  vm.swx = (vm.swx - clamp(dy, -.1, .1)) * (1 - sk); vm.swy = (vm.swy + clamp(dp, -.1, .1)) * (1 - sk);
   vmKick = Math.max(0, vmKick - dt * 9); vm.recoil = lerp(vm.recoil, vmKick, Math.min(1, dt * 30));
-  const bob = moving ? 1 : .15, rl = u.reloadT > 0 ? 1 : 0;
-  vm.root.scale.setScalar(.52);
-  vm.root.position.set(5.2 + vm.swayX + Math.cos(vm.walk) * .7 * bob, -5.2 + Math.abs(Math.sin(vm.walk)) * .6 * bob - rl * 4 + (u.downed ? -3 : 0), -12 + vm.recoil * 2.4);
-  vm.root.rotation.set(vm.recoil * .12 - rl * .5, .07 + vm.swayX * .02, rl * .4);
-  vm.flash.visible = vmKick > .65; if (vm.flash.visible) vm.flash.rotation.z = Math.random() * 3;
-  vmCam.aspect = W / H; vmCam.updateProjectionMatrix();
+  vm.swap = Math.max(0, vm.swap - dt * 2.6);
+  const bb = moving ? 1 : 0, bobX = Math.cos(vm.walk) * .012 * bb, bobY = -Math.abs(Math.sin(vm.walk)) * .012 * bb + Math.sin(time * 1.6) * .002;
+  // recarga: inclina e abaixa, troca o pente, volta
+  const Wp = WEAPONS[u.w[u.wi].id], rp = u.reloadT > 0 ? 1 - u.reloadT / Wp.reload : 1;
+  const sm = x => x * x * (3 - 2 * x), rk = u.reloadT > 0 ? sm(clamp(rp / .18, 0, 1)) * (1 - sm(clamp((rp - .8) / .2, 0, 1))) : 0;
+  const magJ = u.reloadT > 0 && rp > .55 && rp < .68 ? Math.sin((rp - .55) / .13 * Math.PI) : 0;
+  const swapK = Math.sin(vm.swap * Math.PI / 2), down = u.downed ? .08 : 0, pis = u.w[u.wi].id === 'pistola' ? 1 : 0;
+  VM.position.set(.14 - pis * .04 + vm.swx * .35 + bobX - rk * .1, -.1 + pis * .045 + vm.swy * .25 + bobY - rk * -.075 + magJ * .012 - swapK * .12 - down, -.3 + vm.recoil * .045 - rk * .05);
+  VM.rotation.set(-vm.swy * .6 + vm.recoil * .09 + rk * .28 + magJ * .06 + swapK * .3, vm.swx * .9 + rk * .4, vm.swx * .5 + rk * .22);
+  vmFlash.visible = vmKick > .65; if (vmFlash.visible) { vmFlash.rotation.z = Math.random() * 3; vmFlash.scale.setScalar(.8 + Math.random() * .5); }
+  vmFlashLight.intensity = vmKick > .6 ? 2.2 * vmKick : 0; vmFlashLight.position.set(.1, 0, -.7);
+  vmCam.aspect = W / H; vmCam.fov = clamp(2 * Math.atan(1 / vmCam.aspect) * 180 / Math.PI, 44, 74); vmCam.updateProjectionMatrix(); // como no NK: 90° na horizontal
   renderer.autoClear = false; renderer.clearDepth(); renderer.render(vmScene, vmCam); renderer.autoClear = true;
 }
 const SKY_TAT = new THREE.Color(FOGC), SKY_FPS = new THREE.Color(0x4a473f);
