@@ -7,7 +7,7 @@ Guerra de trincheiras 20 contra 20 em 3D, no navegador (PC e celular).
 - 7 classes, todas armadas: Fuzileiro, Sniper, Médico, Engenheiro, Metralhador, Assalto e Rádio-operador.
 - Vence quem conquista o território: bandeiras drenam os reforços do inimigo.
 
-**Jogar:** https://nicolasilvar09-bit.github.io/terra-de-ninguem/
+**Jogar:** https://nicolasilvar09-bit.github.io/nuremberg/
 
 ## Jogar com amigos
 1. Toque em **Criar sala online** e mande o link (ou o código de 4 letras) para os amigos.

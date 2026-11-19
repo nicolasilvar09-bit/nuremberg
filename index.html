@@ -2110,7 +2110,7 @@ function computeRates() {
   NET.snapRate = clamp(Math.floor((75 - 2 * N * NET.inRate) / (1 + N)), 4, 12);
 }
 function onlineNote(t, bad) { const el = $('onlineNote'); el.textContent = t; el.style.color = bad ? 'var(--red)' : ''; }
-function onlineMissing() { onlineNote('O modo online só funciona pelo link do jogo no GitHub Pages (nicolasilvar09-bit.github.io/terra-de-ninguem).', true); }
+function onlineMissing() { onlineNote('O modo online só funciona pelo link do jogo no GitHub Pages (nicolasilvar09-bit.github.io/nuremberg).', true); }
 
 function createRoom() {
   if (!netReady()) { onlineMissing(); return; }
